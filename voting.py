@@ -1,4 +1,4 @@
-
+import random
 import numpy
 
 CAND = 0  # subscript of list which represents the candidate
@@ -50,7 +50,7 @@ def create_voting(voters, candidates):
             candidate = s[v][CAND] - 1  # which candidate has rank v+1
             candidateRanking[i][candidate][PLACE] = v + 1
     print_rankings(names, candidateRanking, voters, candidates, ordered)
-    return names, candidateRanking, ordered
+    return names, candidateRanking, ordered, connections
 
 def ranked_choice_winner(orderRankings):
     # find the number of candidates
@@ -151,7 +151,7 @@ def ordinal_social_welfare(names, orderedRankings, winner=None):
 
         # last place points is always 1 
         lastPoints = 1
-        
+
         utility = winnerPoints - lastPoints
         total += utility
         voterName = names[i] if names is not None else i
@@ -159,14 +159,114 @@ def ordinal_social_welfare(names, orderedRankings, winner=None):
 
     print(f"Total ordinal social welfare if {winner} wins: {total}")
 
+def ordinal_social_welfare_actual(names, candidateRanking, winner):
+    numVoters = len(candidateRanking)
+    numCandidates = len(candidateRanking[0])
+
+    total = 0
+    print(f"\nOrdinal utilities (based on original ranking) if {winner} wins:")
+    for i in range(numVoters):
+        place = candidateRanking[i][winner - 1][PLACE]
+        winnerPoints = numCandidates - (place - 1)
+
+        # last place points is always 1 
+        lastPoints = 1
+        util = winnerPoints - lastPoints
+        total += util
+        voterName = names[i]
+        print(f"- {voterName}: {util} (winner place {place})")
+
+    print(f"Total ordinal social welfare if {winner} wins: {total}")
+
+def defensive_voting(connections, ordered, candidateRanking, threshold=0.3, maxRounds=10, seed=None):
+    numVoters = len(ordered)
+    numCandidates = len(ordered[0])
+
+    votes = [ordered[i][0] for i in range(numVoters)]
+    changesPerRound = []
+    randomSeed = random.Random(seed)
+
+    for _ in range(1, maxRounds + 1):
+        changes = 0
+        indices = list(range(numVoters))
+        randomSeed.shuffle(indices)
+
+        # process each voter in random order and look at their neighbors rankings
+        for i in indices:
+            neighbor = [j for j, val in enumerate(connections[i]) if val]
+            deg = len(neighbor)
+            if deg == 0:
+                continue
+
+            # find voter's last choice candidate
+            lastChoice = None
+            for entry in candidateRanking[i]:
+                if entry[PLACE] == numCandidates:
+                    lastChoice = entry[CAND]
+                    break
+
+            countLast = sum(1 for j in neighbor if votes[j] == lastChoice)
+            if countLast / deg > threshold:
+                neighborCounts = {}
+                for j in neighbor:
+                    c = votes[j]
+                    if c == lastChoice:
+                        continue
+                    neighborCounts[c] = neighborCounts.get(c, 0) + 1
+
+                newVote = votes[i]
+                if neighborCounts:
+                    maxCount = max(neighborCounts.values())
+                    candidatesMax = [c for c, cnt in neighborCounts.items() if cnt == maxCount]
+                    bestC = min(candidatesMax, key=lambda c: candidateRanking[i][c - 1][PLACE])
+                    newVote = bestC
+                else:
+                    if len(ordered[i]) >= 2:
+                        newVote = ordered[i][1]
+
+                if newVote != votes[i]:
+                    votes[i] = newVote
+                    changes += 1
+
+        changesPerRound.append(changes)
+        if changes == 0:
+            break
+
+    finalCounts = {}
+    for v in votes:
+        finalCounts[v] = finalCounts.get(v, 0) + 1
+    finalWinner = max(finalCounts.items(), key=lambda kv: kv[1])[0] if finalCounts else None
+    return finalWinner, changesPerRound, votes
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    names, rankings, orderRanking = create_voting(20, 5)
+    names, rankings, orderRanking, connections = create_voting(20, 5)
     winner, eliminationOrder = ranked_choice_winner(orderRanking)
     print("\nElimination order:", eliminationOrder)
     print("Winner:", winner)
 
+    # social welfare
     cardinal_social_welfare(names, winner, rankings)
-
     ordinal_social_welfare(names, orderRanking, winner)
+
+    print("\n---SOCIAL NETWORK SIMULATION (DEFENSIVE LAST-CHOICE AVOIDER)---")
+    # run again but voters are allowed to switch their votes based on connections
+    names2, rankings2, orderRanking2, connections2 = create_voting(20, 5)
+
+    # show connection matrix
+    print_connections(names2, connections2, 20, 5)
+
+    # simulate
+    winner2, changesPerRound, finalVotes = defensive_voting(connections2, orderRanking2, rankings2, threshold=0.3, maxRounds=10, seed=42)
+
+    # show how many voters change their mind each round
+    for r, c in enumerate(changesPerRound, start=1):
+        print(f"Round {r}: {c} voters changed their vote")
+
+    # list social welfare (based on actual preference, not reported preference)
+    cardinal_social_welfare(names2, winner2, rankings2)
+    ordinal_social_welfare_actual(names2, rankings2, winner2)
+
+
+
 
