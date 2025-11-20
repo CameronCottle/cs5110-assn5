@@ -81,6 +81,7 @@ def ranked_choice_winner(orderRankings):
         for candidate, votes in counts.items():
             if votes > totalCandidatesVotes / 2:
                 print(f"Candidate {candidate} wins with {votes} votes")
+                print("\nElimination order:", eliminationOrder)
                 return candidate, eliminationOrder
 
         # if no candidates votes, stop
@@ -117,66 +118,41 @@ def ranked_choice_winner(orderRankings):
             candidates.remove(candidate)
             eliminationOrder.append(candidate)
 
-def cardinal_social_welfare(names, winner, rankings):
+def cardinal_social_welfare(winner, rankings):
     numVoters = len(rankings)
-    numCandidates = len(rankings[0])
 
-    # for each possible winner, compute each voter's cardinal utility (winner score - last score)
-    print(f"\nCardinal social welfare if {winner} wins:")
     total = 0.0
     for i in range(numVoters):
         ballot = rankings[i]
+        scores = [entry[SCORE] for entry in ballot]
+        best = max(scores)
         winnerScore = ballot[winner - 1][SCORE]
-        lastScore = None
-        for entry in ballot:
-            if entry[PLACE] == numCandidates:
-                lastScore = entry[SCORE]
-                break
-        if lastScore is None:
-            lastScore = min(e[SCORE] for e in ballot)
 
-        utility = winnerScore - lastScore
+        utility = best - winnerScore
         total += utility
-        print(f"- {names[i]}: {utility:.3f}")
-    print(f"Total cardinal social welfare if {winner} wins: {total:.3f}")
 
-def ordinal_social_welfare(names, orderedRankings, winner=None):
-    numCandidates = len(orderedRankings[0])
-    print(f"\nOrdinal utilities with candidate {winner} winning:")
+    print(f"Total cardinal social welfare when candidate {winner} wins: {total:.3f}")
+    return total
+
+# calculate ordinal score for 
+def ordinal_social_welfare(winner, orderedRankings):
     total = 0
-    for i, b in enumerate(orderedRankings):
-        # find position of winner in this ballot
-        pos = b.index(winner)
-        winnerPoints = numCandidates - pos
+    for i, order in enumerate(orderedRankings):
+        place = order.index(winner) + 1
+        util = place - 1
+        total += util
+    print(f"Total ordinal social welfare when candidate {winner} wins: {total}")
+    return total
 
-        # last place points is always 1 
-        lastPoints = 1
-
-        utility = winnerPoints - lastPoints
-        total += utility
-        voterName = names[i] if names is not None else i
-        print(f"- {voterName}: {utility}")
-
-    print(f"Total ordinal social welfare if {winner} wins: {total}")
-
-def ordinal_social_welfare_actual(names, candidateRanking, winner):
+def ordinal_social_welfare_actual(winner, candidateRanking):
     numVoters = len(candidateRanking)
-    numCandidates = len(candidateRanking[0])
-
     total = 0
-    print(f"\nOrdinal utilities (based on original ranking) if {winner} wins:")
     for i in range(numVoters):
         place = candidateRanking[i][winner - 1][PLACE]
-        winnerPoints = numCandidates - (place - 1)
-
-        # last place points is always 1 
-        lastPoints = 1
-        util = winnerPoints - lastPoints
+        util = place - 1
         total += util
-        voterName = names[i]
-        print(f"- {voterName}: {util} (winner place {place})")
-
-    print(f"Total ordinal social welfare if {winner} wins: {total}")
+    print(f"Total ordinal social welfare when candidate {winner} wins: {total}")
+    return total
 
 def defensive_voting(connections, ordered, candidateRanking, threshold=0.3, maxRounds=10, seed=None):
     numVoters = len(ordered)
@@ -240,32 +216,32 @@ def defensive_voting(connections, ordered, candidateRanking, threshold=0.3, maxR
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    names, rankings, orderRanking, connections = create_voting(20, 5)
+    NUM_VOTERS = 20
+    NUM_CANDIDATES = 5
+
+    names, rankings, orderRanking, connections = create_voting(NUM_VOTERS, NUM_CANDIDATES)
+
+    print("\n--- PART 1: RANKED CHOICE VOTING ---")
     winner, eliminationOrder = ranked_choice_winner(orderRanking)
     print("\nElimination order:", eliminationOrder)
-    print("Winner:", winner)
+    print("Ranked-choice winner:", winner)
 
-    # social welfare
-    cardinal_social_welfare(names, winner, rankings)
-    ordinal_social_welfare(names, orderRanking, winner)
+    # social welfare for ranked-choice winner
+    cardinal_social_welfare(winner, rankings)
+    ordinal_social_welfare(winner, orderRanking)
 
-    print("\n---SOCIAL NETWORK SIMULATION (DEFENSIVE LAST-CHOICE AVOIDER)---")
-    # run again but voters are allowed to switch their votes based on connections
-    names2, rankings2, orderRanking2, connections2 = create_voting(20, 5)
+    # ----- PART 2 -----
+    print("\n--- PART 2: SOCIAL NETWORK SIMULATION (Defensive Voting Strategy) ---")
 
-    # show connection matrix
-    print_connections(names2, connections2, 20, 5)
+    winner2, changesPerRound, finalVotes = defensive_voting(connections, orderRanking, rankings, threshold=0.2, maxRounds=10, seed=42)
 
-    # simulate
-    winner2, changesPerRound, finalVotes = defensive_voting(connections2, orderRanking2, rankings2, threshold=0.3, maxRounds=10, seed=42)
-
-    # show how many voters change their mind each round
+    print(f"\nSocial network winner: {winner2}")
     for r, c in enumerate(changesPerRound, start=1):
         print(f"Round {r}: {c} voters changed their vote")
 
-    # list social welfare (based on actual preference, not reported preference)
-    cardinal_social_welfare(names2, winner2, rankings2)
-    ordinal_social_welfare_actual(names2, rankings2, winner2)
+    # social welfare based on true preferences
+    cardinal_social_welfare(winner2, rankings)
+    ordinal_social_welfare_actual(winner2, rankings)
 
 
 
